@@ -8,6 +8,8 @@
 #include <chrono>
 #include <string>
 
+#pragma clang diagnostic push
+#pragma ide diagnostic ignored "OCDFAInspection"
 #define RANDOM_MULTIPLIER 0x5DEECE66DULL
 #define RANDOM_ADDEND 0xBULL
 #define RANDOM_MASK ((1ULL << 48ULL) - 1ULL)
@@ -20,7 +22,7 @@
 #endif
 
 #ifndef WANTED_CACTUS_HEIGHT
-#define WANTED_CACTUS_HEIGHT 20LL
+#define WANTED_CACTUS_HEIGHT 18LL
 #endif
 
 #ifndef WORK_UNIT_SIZE
@@ -40,7 +42,7 @@
 #endif
 
 #ifndef END
-#define END (1ULL << 48ULL)
+#define END (1ULL << 44ULL)
 #endif
 
 #ifndef CHUNK_SEED
@@ -97,7 +99,7 @@ namespace java_random {
 
 }
 
-__global__ __launch_bounds__(256, 2) void crack(uint64_t seed_offset, int32_t *num_seeds, uint64_t *seeds) {
+__global__ __launch_bounds__(BLOCK_SIZE, 2) void crack(uint64_t seed_offset, int32_t *num_seeds, uint64_t *seeds) {
     uint64_t originalSeed = ((blockIdx.x * blockDim.x + threadIdx.x + seed_offset) << 4ULL) | CHUNK_SEED_BOTTOM_4;
     uint64_t seed = originalSeed;
 
@@ -112,17 +114,14 @@ __global__ __launch_bounds__(256, 2) void crack(uint64_t seed_offset, int32_t *n
     int16_t initialPosX, initialPosY, initialPosZ, initialPos;
     int16_t posX, posY, posZ;
 
-    int16_t i, a, j;
     int8_t position = -1;
 
-    for (i = -90; i < 0; i += 9) {
-        // Keep, most threads finish early this way
-        if (heightMap[currentHighestPos] - WANTED_CACTUS_HEIGHT - FLOOR_LEVEL < i)
+    for (int32_t i = 0; i < 10; i++) {
+        if (WANTED_CACTUS_HEIGHT - heightMap[currentHighestPos] + FLOOR_LEVEL > 9 * (10 - i))
             return;
 
         initialPosX = java_random::next(&seed, 4) + 8;
         initialPosZ = java_random::next(&seed, 4) + 8;
-
         initialPos = initialPosX + initialPosZ * 32;
 
         if (position == -1) {
@@ -151,13 +150,12 @@ __global__ __launch_bounds__(256, 2) void crack(uint64_t seed_offset, int32_t *n
             }
         }
 
-        initialPosY = java_random::next_int_unknown(&seed, (heightMap[initialPosX + initialPosZ * 32] + 1) * 2);
+        initialPosY = java_random::next_int_unknown(&seed, (heightMap[initialPos] + 1) * 2);
 
-        for (a = 0; a < 10; a++) {
+        for (int32_t a = 0; a < 10; a++) {
             posX = initialPosX + java_random::next(&seed, 3) - java_random::next(&seed, 3);
             posY = initialPosY + java_random::next(&seed, 2) - java_random::next(&seed, 2);
             posZ = initialPosZ + java_random::next(&seed, 3) - java_random::next(&seed, 3);
-
             posMap = posX + posZ * 32;
 
             if (position == -1) {
@@ -186,16 +184,17 @@ __global__ __launch_bounds__(256, 2) void crack(uint64_t seed_offset, int32_t *n
                 }
             }
 
-            // Keep
             if (posY <= heightMap[posMap])
                 continue;
 
-            for (j = 0; j < 1 + java_random::next_int_unknown(&seed, java_random::next_int(&seed) + 1); j++) {
+            int32_t offset = 1 + java_random::next_int_unknown(&seed, java_random::next_int(&seed) + 1);
+
+            for (int32_t j = 0; j < offset; j++) {
                 if ((posY + j - 1) > heightMap[posMap] || posY < 0) continue;
                 if ((posY + j) <= heightMap[(posX + 1) + posZ * 32]) continue;
-                if ((posY + j) <= heightMap[posX + (posZ - 1) * 32]) continue;
                 if ((posY + j) <= heightMap[(posX - 1) + posZ * 32]) continue;
                 if ((posY + j) <= heightMap[posX + (posZ + 1) * 32]) continue;
+                if ((posY + j) <= heightMap[posX + (posZ - 1) * 32]) continue;
 
                 heightMap[posMap]++;
 
@@ -206,14 +205,14 @@ __global__ __launch_bounds__(256, 2) void crack(uint64_t seed_offset, int32_t *n
         }
 
         if (heightMap[currentHighestPos] - FLOOR_LEVEL >= WANTED_CACTUS_HEIGHT) {
-            uint64_t addend = 0;
+            uint64_t neighbor = 0;
             if (position == 0)
-                addend = NEIGHBOR1;
+                neighbor = NEIGHBOR1;
             if (position == 1)
-                addend = NEIGHBOR2;
+                neighbor = NEIGHBOR2;
             if (position == 2)
-                addend = NEIGHBOR3;
-            seeds[atomicAdd(num_seeds, 1)] = (addend << 48ULL) | originalSeed;
+                neighbor = NEIGHBOR3;
+            seeds[atomicAdd(num_seeds, 1)] = (neighbor << 48ULL) | originalSeed;
             return;
         }
     }
@@ -237,7 +236,7 @@ std::mutex info_lock;
 
 void gpu_manager(int32_t gpu_index) {
     std::string fileName = "kaktoos_seeds" + std::to_string(gpu_index) + ".txt";
-    FILE *out_file = fopen(fileName.c_str(), "a");
+    FILE *out_file = fopen(fileName.c_str(), "w");
     cudaSetDevice(gpu_index);
     while (offset < END) {
         *nodes[gpu_index].num_seeds = 0;
@@ -247,7 +246,7 @@ void gpu_manager(int32_t gpu_index) {
         info_lock.unlock();
         cudaDeviceSynchronize();
         for (int32_t i = 0, e = *nodes[gpu_index].num_seeds; i < e; i++) {
-            fprintf(out_file, "%lld\n", (long long int)nodes[gpu_index].seeds[i]);
+            fprintf(out_file, "%llu %llu\n", nodes[gpu_index].seeds[i] & RANDOM_MASK, (unsigned long long)nodes[gpu_index].seeds[i] >> 48ULL);
             printf("Found seed: %lld\n", (long long int)nodes[gpu_index].seeds[i]);
         }
         fflush(out_file);
@@ -294,3 +293,4 @@ int main() {
     printf("But, verily, it be the nature of dreams to end.\n");
 
 }
+#pragma clang diagnostic pop
