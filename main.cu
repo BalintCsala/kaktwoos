@@ -105,7 +105,7 @@ __global__ __launch_bounds__(256, 2) void crack(uint64_t seed_offset, int32_t *n
 
 #pragma unroll
     for (int i = 0; i < 1024; i++) {
-        heightMap[i] = FLOOR_LEVEL;
+        heightMap[i] = 0;
     }
 
     int32_t currentHighestPos = 0, posMap;
@@ -117,7 +117,7 @@ __global__ __launch_bounds__(256, 2) void crack(uint64_t seed_offset, int32_t *n
 
     for (i = -90; i < 0; i += 9) {
         // Keep, most threads finish early this way
-        if (heightMap[currentHighestPos] - WANTED_CACTUS_HEIGHT - FLOOR_LEVEL < i)
+        if (heightMap[currentHighestPos] - WANTED_CACTUS_HEIGHT < i)
             return;
 
         initialPosX = java_random::next(&seed, 4) + 8;
@@ -151,7 +151,7 @@ __global__ __launch_bounds__(256, 2) void crack(uint64_t seed_offset, int32_t *n
             }
         }
 
-        initialPosY = java_random::next_int_unknown(&seed, (heightMap[initialPosX + initialPosZ * 32] + 1) * 2);
+        initialPosY = java_random::next_int_unknown(&seed, ((heightMap[initialPosX + initialPosZ * 32] + 1) + FLOOR_LEVEL) * 2);
 
         for (a = 0; a < 10; a++) {
             posX = initialPosX + java_random::next(&seed, 3) - java_random::next(&seed, 3);
@@ -187,15 +187,15 @@ __global__ __launch_bounds__(256, 2) void crack(uint64_t seed_offset, int32_t *n
             }
 
             // Keep
-            if (posY <= heightMap[posMap])
+            if (posY <= heightMap[posMap] + FLOOR_LEVEL)
                 continue;
 
             for (j = 0; j < 1 + java_random::next_int_unknown(&seed, java_random::next_int(&seed) + 1); j++) {
-                if ((posY + j - 1) > heightMap[posMap] || posY < 0) continue;
-                if ((posY + j) <= heightMap[(posX + 1) + posZ * 32]) continue;
-                if ((posY + j) <= heightMap[posX + (posZ - 1) * 32]) continue;
-                if ((posY + j) <= heightMap[(posX - 1) + posZ * 32]) continue;
-                if ((posY + j) <= heightMap[posX + (posZ + 1) * 32]) continue;
+                if ((posY + j - 1) > heightMap[posMap] + FLOOR_LEVEL || posY < 0) continue;
+                if ((posY + j) <= heightMap[(posX + 1) + posZ * 32] + FLOOR_LEVEL) continue;
+                if ((posY + j) <= heightMap[posX + (posZ - 1) * 32] + FLOOR_LEVEL) continue;
+                if ((posY + j) <= heightMap[(posX - 1) + posZ * 32] + FLOOR_LEVEL) continue;
+                if ((posY + j) <= heightMap[posX + (posZ + 1) * 32] + FLOOR_LEVEL) continue;
 
                 heightMap[posMap]++;
 
@@ -205,7 +205,7 @@ __global__ __launch_bounds__(256, 2) void crack(uint64_t seed_offset, int32_t *n
             }
         }
 
-        if (heightMap[currentHighestPos] - FLOOR_LEVEL >= WANTED_CACTUS_HEIGHT) {
+        if (heightMap[currentHighestPos] >= WANTED_CACTUS_HEIGHT) {
             uint64_t addend = 0;
             if (position == 0)
                 addend = NEIGHBOR1;
