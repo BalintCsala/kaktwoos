@@ -68,13 +68,14 @@
 #endif
 
 #ifdef DEBUG
-__device__ int64_t DEBUG_ARR[] {
-    0, 18, 90, 20, 9, 308, -1, 79, 16, 78, 11, 368, -1, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 24, 76, 10,
-    344, 1, 0, 12, 344, 12, 3, 12, 0, 0, 0, 0, 13, 13, 13, 13, 0, 0, 0, 0, 14, 14, 14, 14, 0, 0, 0, 0, 15, 15, 15, 17,
-    80, 11, 369, 0, 1, 0, 0, 0, 0, 0, 16, 76, 3, 112, 0, 1, 0, 0, 0, 0, 0, 21, 78, 11, 373, 0, 2, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 20, 82, 10, 340, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 24, 79, 10, 344, 15, 3, 15, 0, 0, 0, 0, 16, 16, 16,
-    16, 0, 0, 0, 0, 17, 17, 17, 17, 0, 0, 0, 0, 18, 18, 18, 17, 80, 6, 209, 0, 1, 0, 0, 0, 0, 0, 22, 81, 10, 342, 0, 1,
-    0, 0, 0, 0, 0, 22, 77, 8, 278, 0, 1, 0, 0, 0, 0, 0, 18, 344, 96827469838241317
+// Magic values, don't touch
+__device__ int64_t DEBUG_ARR[]{
+        0, 18, 90, 20, 9, 308, -1, 79, 16, 78, 11, 368, -1, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 24, 76,
+        10, 344, 1, 0, 12, 344, 12, 3, 12, 0, 0, 0, 0, 13, 13, 13, 13, 0, 0, 0, 0, 14, 14, 14, 14, 0, 0, 0, 0, 15, 15,
+        15, 17, 80, 11, 369, 0, 1, 0, 0, 0, 0, 0, 16, 76, 3, 112, 0, 1, 0, 0, 0, 0, 0, 21, 78, 11, 373, 0, 2, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 20, 82, 10, 340, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 24, 79, 10, 344, 15, 3, 15, 0, 0, 0,
+        0, 16, 16, 16, 16, 0, 0, 0, 0, 17, 17, 17, 17, 0, 0, 0, 0, 18, 18, 18, 17, 80, 6, 209, 0, 1, 0, 0, 0, 0, 0, 22,
+        81, 10, 342, 0, 1, 0, 0, 0, 0, 0, 22, 77, 8, 278, 0, 1, 0, 0, 0, 0, 0, 18, 344, 96827469838241317
 };
 
 #ifdef EXTRACT
@@ -82,7 +83,6 @@ __device__ int64_t DEBUG_ARR[] {
 #else
 #define ASSERT(k, val) if (DEBUG_ARR[k++] != val) printf("Error at %d, expected %lld, got %lld\n", __LINE__, (long long)DEBUG_ARR[k - 1], (long long)val)
 #endif
-
 #else
 #define ASSERT(k, val)
 #endif
@@ -283,11 +283,11 @@ __global__ __launch_bounds__(BLOCK_SIZE, 2) void crack(uint64_t seed_offset, int
 }
 
 struct GPU_Node {
-    int* num_seeds;
-    uint64_t* seeds;
+    int *num_seeds;
+    uint64_t *seeds;
 };
 
-void setup_gpu_node(GPU_Node* node, int32_t gpu) {
+void setup_gpu_node(GPU_Node *node, int32_t gpu) {
     cudaSetDevice(gpu);
     cudaMallocManaged(&node->num_seeds, sizeof(*node->num_seeds));
     cudaMallocManaged(&node->seeds, 1ULL << 10ULL); // approx 1kb
@@ -304,14 +304,17 @@ void gpu_manager(int32_t gpu_index) {
     cudaSetDevice(gpu_index);
     while (offset < END) {
         *nodes[gpu_index].num_seeds = 0;
-        crack<<<WORK_UNIT_SIZE / BLOCK_SIZE, BLOCK_SIZE, 0>>> (offset, nodes[gpu_index].num_seeds, nodes[gpu_index].seeds);
+        crack<<<WORK_UNIT_SIZE / BLOCK_SIZE, BLOCK_SIZE, 0>>>(offset, nodes[gpu_index].num_seeds,
+                                                              nodes[gpu_index].seeds);
         info_lock.lock();
         offset += WORK_UNIT_SIZE;
         info_lock.unlock();
         cudaDeviceSynchronize();
         for (int32_t i = 0, e = *nodes[gpu_index].num_seeds; i < e; i++) {
+#ifndef DEBUG
             fprintf(out_file, "%llu %llu\n", nodes[gpu_index].seeds[i] & RANDOM_MASK, (unsigned long long)nodes[gpu_index].seeds[i] >> 48ULL);
             printf("Found seed: %lld\n", (long long int)nodes[gpu_index].seeds[i]);
+#endif
         }
         fflush(out_file);
         info_lock.lock();
@@ -327,7 +330,7 @@ int main() {
     std::thread threads[GPU_COUNT];
 
     time_t startTime = time(nullptr), currentTime;
-    for(int32_t i = 0; i < GPU_COUNT; i++) {
+    for (int32_t i = 0; i < GPU_COUNT; i++) {
         setup_gpu_node(&nodes[i], i);
         threads[i] = std::thread(gpu_manager, i);
     }
@@ -336,15 +339,15 @@ int main() {
 
     while (offset < END) {
         time(&currentTime);
-        int timeElapsed = (int)(currentTime - startTime);
-        double speed = (double)(offset - OFFSET) / (double)timeElapsed / 1000000.0;
+        int timeElapsed = (int) (currentTime - startTime);
+        double speed = (double) (offset - OFFSET) / (double) timeElapsed / 1000000.0;
         printf("Searched %lld seeds, offset: %lld found %lld matches. Time elapsed: %ds. Speed: %.2fm seeds/s. %f%%\n",
-               (long long int)(offset - OFFSET),
-               (long long int)offset,
-               (long long int)count,
+               (long long int) (offset - OFFSET),
+               (long long int) offset,
+               (long long int) count,
                timeElapsed,
                speed,
-               (double)(offset - OFFSET) / (END - OFFSET) * 100);
+               (double) (offset - OFFSET) / (END - OFFSET) * 100);
 
         std::this_thread::sleep_for(0.5s);
     }
