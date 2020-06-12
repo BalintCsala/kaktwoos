@@ -87,13 +87,13 @@ __device__ int64_t DEBUG_ARR[]{
 #define ASSERT(k, val)
 #endif
 
-/*inline __device__ int8_t extract(int8_t heightMap[], int32_t id) {
-    return (*((int16_t*)(heightMap + ((id * 6U) >> 3U))) >> ((id * 6U) & 0b111U)) & 0b111111U;
+inline __device__ int8_t extract(uint32_t heightMap[], int32_t id) {
+    return (heightMap[id / 5] >> ((id % 5) * 6)) & 0b111111U;
 }
 
-inline __device__ void increase(int8_t heightMap[], int32_t id, int8_t val) {
-    *((int16_t*)(heightMap + ((id * 6) >> 3U))) += val << ((id * 6) & 0b111U);
-}*/
+inline __device__ void increase(uint32_t heightMap[], int32_t id, int8_t val) {
+    heightMap[id / 5] += val << ((id % 5) * 6);
+}
 
 namespace java_random {
 
@@ -134,10 +134,10 @@ __global__ __launch_bounds__(BLOCK_SIZE, 2) void crack(uint64_t seed_offset, int
 #endif
     uint64_t seed = originalSeed;
 
-    int8_t heightMap[1024];
+    uint32_t heightMap[205];
 
 #pragma unroll
-    for (int i = 0; i < 1024; i++) {
+    for (int i = 0; i < 205; i++) {
         heightMap[i] = 0;
     }
 
@@ -149,9 +149,9 @@ __global__ __launch_bounds__(BLOCK_SIZE, 2) void crack(uint64_t seed_offset, int
 
     for (int32_t i = 0; i < 10; i++) {
         ASSERT(debug_index, i);
-        ASSERT(debug_index, WANTED_CACTUS_HEIGHT - heightMap[currentHighestPos]);
+        ASSERT(debug_index, WANTED_CACTUS_HEIGHT - extract(heightMap, currentHighestPos));
         ASSERT(debug_index, 9 * (10 - i));
-        if (WANTED_CACTUS_HEIGHT - heightMap[currentHighestPos] > 9 * (10 - i))
+        if (WANTED_CACTUS_HEIGHT - extract(heightMap, currentHighestPos) > 9 * (10 - i))
             return;
 
         initialPosX = java_random::next(&seed, 4) + 8;
@@ -181,17 +181,17 @@ __global__ __launch_bounds__(BLOCK_SIZE, 2) void crack(uint64_t seed_offset, int
                     if (bit != CHUNK_SEED_BIT_5) return;
                 }
 
-                heightMap[initialPos] += CACTUS_HEIGHT;
-                ASSERT(debug_index, heightMap[initialPos]);
+                increase(heightMap, initialPos, CACTUS_HEIGHT);
+                ASSERT(debug_index, extract(heightMap, initialPos));
 
-                if (heightMap[currentHighestPos] < heightMap[initialPos]) {
+                if (extract(heightMap, currentHighestPos) < extract(heightMap, initialPos)) {
                     currentHighestPos = initialPos;
                     ASSERT(debug_index, currentHighestPos);
                 }
             }
         }
 
-        initialPosY = java_random::next_int_unknown(&seed, (heightMap[initialPos] + FLOOR_LEVEL + 1) * 2);
+        initialPosY = java_random::next_int_unknown(&seed, ((int32_t)extract(heightMap, initialPos) + FLOOR_LEVEL + 1) * 2);
         ASSERT(debug_index, initialPosY);
 
         for (int32_t a = 0; a < 10; a++) {
@@ -224,49 +224,49 @@ __global__ __launch_bounds__(BLOCK_SIZE, 2) void crack(uint64_t seed_offset, int
                         if (bit != CHUNK_SEED_BIT_5) return;
                     }
 
-                    heightMap[posMap] += CACTUS_HEIGHT;
-                    ASSERT(debug_index, heightMap[posMap]);
+                    increase(heightMap, posMap, CACTUS_HEIGHT);
+                    ASSERT(debug_index, extract(heightMap, posMap));
 
-                    if (heightMap[currentHighestPos] < heightMap[posMap]) {
+                    if (extract(heightMap, currentHighestPos) < extract(heightMap, posMap)) {
                         currentHighestPos = posMap;
                         ASSERT(debug_index, currentHighestPos);
                     }
                 }
             }
 
-            ASSERT(debug_index, heightMap[posMap]);
-            if (posY <= heightMap[posMap] + FLOOR_LEVEL)
+            ASSERT(debug_index, extract(heightMap, posMap));
+            if (posY <= extract(heightMap, posMap) + FLOOR_LEVEL)
                 continue;
 
             int32_t offset = 1 + java_random::next_int_unknown(&seed, java_random::next_int(&seed) + 1);
             ASSERT(debug_index, offset);
 
             for (int32_t j = 0; j < offset; j++) {
-                ASSERT(debug_index, heightMap[posMap]);
-                ASSERT(debug_index, heightMap[(posX + 1) + posZ * 32]);
-                ASSERT(debug_index, heightMap[(posX - 1) + posZ * 32]);
-                ASSERT(debug_index, heightMap[posX + (posZ + 1) * 32]);
-                ASSERT(debug_index, heightMap[posX + (posZ - 1) * 32]);
-                if ((posY + j - 1) > heightMap[posMap] + FLOOR_LEVEL || posY < 0) continue;
-                if ((posY + j) <= heightMap[(posX + 1) + posZ * 32] + FLOOR_LEVEL) continue;
-                if ((posY + j) <= heightMap[(posX - 1) + posZ * 32] + FLOOR_LEVEL) continue;
-                if ((posY + j) <= heightMap[posX + (posZ + 1) * 32] + FLOOR_LEVEL) continue;
-                if ((posY + j) <= heightMap[posX + (posZ - 1) * 32] + FLOOR_LEVEL) continue;
+                ASSERT(debug_index, extract(heightMap, posMap));
+                ASSERT(debug_index, extract(heightMap, (posX + 1) + posZ * 32));
+                ASSERT(debug_index, extract(heightMap, (posX - 1) + posZ * 32));
+                ASSERT(debug_index, extract(heightMap, posX + (posZ + 1) * 32));
+                ASSERT(debug_index, extract(heightMap, posX + (posZ - 1) * 32));
+                if ((posY + j - 1) > extract(heightMap, posMap) + FLOOR_LEVEL || posY < 0) continue;
+                if ((posY + j) <= extract(heightMap, (posX + 1) + posZ * 32) + FLOOR_LEVEL) continue;
+                if ((posY + j) <= extract(heightMap, (posX - 1) + posZ * 32) + FLOOR_LEVEL) continue;
+                if ((posY + j) <= extract(heightMap, posX + (posZ + 1) * 32) + FLOOR_LEVEL) continue;
+                if ((posY + j) <= extract(heightMap, posX + (posZ - 1) * 32) + FLOOR_LEVEL) continue;
 
-                heightMap[posMap]++;
-                ASSERT(debug_index, heightMap[posMap]);
+                increase(heightMap, posMap, 1);
+                ASSERT(debug_index, extract(heightMap, posMap));
 
-                ASSERT(debug_index, heightMap[currentHighestPos]);
-                ASSERT(debug_index, heightMap[posMap]);
-                if (heightMap[currentHighestPos] < heightMap[posMap]) {
+                ASSERT(debug_index, extract(heightMap, currentHighestPos));
+                ASSERT(debug_index, extract(heightMap, posMap));
+                if (extract(heightMap, currentHighestPos) < extract(heightMap, posMap)) {
                     currentHighestPos = posMap;
                     ASSERT(debug_index, currentHighestPos);
                 }
             }
         }
 
-        ASSERT(debug_index, heightMap[currentHighestPos]);
-        if (heightMap[currentHighestPos] >= WANTED_CACTUS_HEIGHT) {
+        ASSERT(debug_index, extract(heightMap, currentHighestPos));
+        if (extract(heightMap, currentHighestPos) >= WANTED_CACTUS_HEIGHT) {
             uint64_t neighbor = 0;
             if (position == 0)
                 neighbor = NEIGHBOR1;
