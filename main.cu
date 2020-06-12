@@ -137,7 +137,7 @@ __global__ __launch_bounds__(BLOCK_SIZE, 2) void crack(uint64_t seed_offset, int
     int8_t heightMap[1024];
 
 #pragma unroll
-    for (int i = 0; i < 1024; i += 8) {
+    for (int i = 0; i < 1024; i++) {
         heightMap[i] = 0;
     }
 
