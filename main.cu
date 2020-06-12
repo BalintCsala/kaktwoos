@@ -67,23 +67,24 @@
 #define CACTUS_HEIGHT 12ULL
 #endif
 
-inline __device__ int8_t extract(int8_t heightMap[], int32_t id) {
-    return (*((int16_t*)(heightMap + ((id * 6U) >> 3U))) >> ((id * 6U) & 0b111U)) & 0b111111U;
+inline __device__ __host__ uint8_t extract(const uint8_t heightMap[], uint32_t id) {
+    return (*(uint16_t*)(heightMap + ((id * 6U) >> 3U)) >> ((id * 6U) & 7U)) & 63U;
+    //return (*((uint16_t*)(heightMap + ((id * 6U) >> 3U))) >> ((id * 6U) & 0b111U)) & 0b111111U;
 }
 
-inline __device__ void increase(int8_t heightMap[], int32_t id, int8_t val) {
-    *((int16_t*)(heightMap + ((id * 6) >> 3U))) += val << ((id * 6) & 0b111U);
+inline __device__ __host__ void increase(uint8_t heightMap[], uint32_t id, uint8_t val) {
+    *((int16_t*)(heightMap + ((id * 6) >> 3U))) += val << ((id * 6U) & 0b111U);
 }
 
 namespace java_random {
 
     // Random::next(bits)
-    __device__ inline uint32_t next(uint64_t *random, int32_t bits) {
+    __device__ __host__ inline uint32_t next(uint64_t *random, int32_t bits) {
         *random = (*random * RANDOM_MULTIPLIER + RANDOM_ADDEND) & RANDOM_MASK;
         return (uint32_t) (*random >> (48ULL - bits));
     }
 
-    __device__ inline int32_t next_int_unknown(uint64_t *seed, int16_t bound) {
+    __device__ __host__ inline int32_t next_int_unknown(uint64_t *seed, int16_t bound) {
         if ((bound & -bound) == bound) {
             *seed = (*seed * RANDOM_MULTIPLIER + RANDOM_ADDEND) & RANDOM_MASK;
             return (int32_t) ((bound * (*seed >> 17ULL)) >> 31ULL);
@@ -99,21 +100,21 @@ namespace java_random {
     }
 
     // Random::nextInt(bound)
-    __device__ inline uint32_t next_int(uint64_t *random) {
+    __device__ __host__ inline uint32_t next_int(uint64_t *random) {
         return java_random::next(random, 31) % 3;
     }
 
 }
 
-__global__ __launch_bounds__(BLOCK_SIZE, 2) void crack(uint64_t seed_offset, int32_t *num_seeds, uint64_t *seeds) {
+void crack(uint64_t seed_offset, int32_t *num_seeds, uint64_t *seeds) {
     uint64_t originalSeed = 77849775653;//((blockIdx.x * blockDim.x + threadIdx.x + seed_offset) << 4ULL) | CHUNK_SEED_BOTTOM_4;
     uint64_t seed = originalSeed;
 
-    int8_t heightMap[768];
+    uint8_t heightMap[768];
 
 #pragma unroll
     for (int i = 0; i < 768; i += 8) {
-        *(uint64_t*)(heightMap + i) = 0;
+        heightMap[i] = 0;
     }
 
     int32_t currentHighestPos = 0, posMap;
@@ -217,7 +218,8 @@ __global__ __launch_bounds__(BLOCK_SIZE, 2) void crack(uint64_t seed_offset, int
                 neighbor = NEIGHBOR2;
             if (position == 2)
                 neighbor = NEIGHBOR3;
-            seeds[atomicAdd(num_seeds, 1)] = (neighbor << 48ULL) | originalSeed;
+            //seeds[atomicAdd(num_seeds, 1)] = (neighbor << 48ULL) | originalSeed;
+            seeds[(*num_seeds)++] = (neighbor << 48ULL) | originalSeed;
             return;
         }
     }
@@ -245,7 +247,8 @@ void gpu_manager(int32_t gpu_index) {
     cudaSetDevice(gpu_index);
     while (offset < END) {
         *nodes[gpu_index].num_seeds = 0;
-        crack<<<WORK_UNIT_SIZE / BLOCK_SIZE, BLOCK_SIZE, 0>>> (offset, nodes[gpu_index].num_seeds, nodes[gpu_index].seeds);
+        //crack<<<WORK_UNIT_SIZE / BLOCK_SIZE, BLOCK_SIZE, 0>>> (offset, nodes[gpu_index].num_seeds, nodes[gpu_index].seeds);
+        crack(offset, nodes[gpu_index].num_seeds, nodes[gpu_index].seeds);
         info_lock.lock();
         offset += WORK_UNIT_SIZE;
         info_lock.unlock();
