@@ -8,8 +8,6 @@
 #include <chrono>
 #include <string>
 
-#pragma clang diagnostic push
-#pragma ide diagnostic ignored "OCDFAInspection"
 #define RANDOM_MULTIPLIER 0x5DEECE66DULL
 #define RANDOM_ADDEND 0xBULL
 #define RANDOM_MASK ((1ULL << 48ULL) - 1ULL)
@@ -69,6 +67,14 @@
 #define CACTUS_HEIGHT 12ULL
 #endif
 
+inline __device__ int8_t extract(int8_t heightMap[], int32_t id) {
+    return (*((int16_t*)(heightMap + ((id * 6U) >> 3U))) >> ((id * 6U) & 0b111U)) & 0b111111U;
+}
+
+inline __device__ void increase(int8_t heightMap[], int32_t id, int8_t val) {
+    *((int16_t*)(heightMap + ((id * 6) >> 3U))) += val << ((id * 6) & 0b111U);
+}
+
 namespace java_random {
 
     // Random::next(bits)
@@ -100,14 +106,14 @@ namespace java_random {
 }
 
 __global__ __launch_bounds__(BLOCK_SIZE, 2) void crack(uint64_t seed_offset, int32_t *num_seeds, uint64_t *seeds) {
-    uint64_t originalSeed = ((blockIdx.x * blockDim.x + threadIdx.x + seed_offset) << 4ULL) | CHUNK_SEED_BOTTOM_4;
+    uint64_t originalSeed = 77849775653;//((blockIdx.x * blockDim.x + threadIdx.x + seed_offset) << 4ULL) | CHUNK_SEED_BOTTOM_4;
     uint64_t seed = originalSeed;
 
-    int8_t heightMap[1024];
+    int8_t heightMap[768];
 
 #pragma unroll
-    for (int i = 0; i < 1024; i++) {
-        heightMap[i] = FLOOR_LEVEL;
+    for (int i = 0; i < 768; i += 8) {
+        *(uint64_t*)(heightMap + i) = 0;
     }
 
     int32_t currentHighestPos = 0, posMap;
@@ -117,9 +123,8 @@ __global__ __launch_bounds__(BLOCK_SIZE, 2) void crack(uint64_t seed_offset, int
     int8_t position = -1;
 
     for (int32_t i = 0; i < 10; i++) {
-        if (WANTED_CACTUS_HEIGHT - heightMap[currentHighestPos] + FLOOR_LEVEL > 9 * (10 - i))
+        if (WANTED_CACTUS_HEIGHT - extract(heightMap, currentHighestPos) > 9 * (10 - i))
             return;
-
         initialPosX = java_random::next(&seed, 4) + 8;
         initialPosZ = java_random::next(&seed, 4) + 8;
         initialPos = initialPosX + initialPosZ * 32;
@@ -142,15 +147,15 @@ __global__ __launch_bounds__(BLOCK_SIZE, 2) void crack(uint64_t seed_offset, int
                     if (bit != CHUNK_SEED_BIT_5) return;
                 }
 
-                heightMap[initialPos] += CACTUS_HEIGHT;
+                increase(heightMap, initialPos, CACTUS_HEIGHT);
 
-                if (heightMap[currentHighestPos] < heightMap[initialPos]) {
+                if (extract(heightMap, currentHighestPos) < extract(heightMap, initialPos)) {
                     currentHighestPos = initialPos;
                 }
             }
         }
 
-        initialPosY = java_random::next_int_unknown(&seed, (heightMap[initialPos] + 1) * 2);
+        initialPosY = java_random::next_int_unknown(&seed, (extract(heightMap, initialPos) + FLOOR_LEVEL + 1) * 2);
 
         for (int32_t a = 0; a < 10; a++) {
             posX = initialPosX + java_random::next(&seed, 3) - java_random::next(&seed, 3);
@@ -176,35 +181,35 @@ __global__ __launch_bounds__(BLOCK_SIZE, 2) void crack(uint64_t seed_offset, int
                         if (bit != CHUNK_SEED_BIT_5) return;
                     }
 
-                    heightMap[posMap] += CACTUS_HEIGHT;
+                    increase(heightMap, posMap, CACTUS_HEIGHT);
 
-                    if (heightMap[currentHighestPos] < heightMap[posMap]) {
+                    if (extract(heightMap, currentHighestPos) < extract(heightMap, posMap)) {
                         currentHighestPos = posMap;
                     }
                 }
             }
 
-            if (posY <= heightMap[posMap])
+            if (posY <= extract(heightMap, posMap) + FLOOR_LEVEL)
                 continue;
 
             int32_t offset = 1 + java_random::next_int_unknown(&seed, java_random::next_int(&seed) + 1);
 
             for (int32_t j = 0; j < offset; j++) {
-                if ((posY + j - 1) > heightMap[posMap] || posY < 0) continue;
-                if ((posY + j) <= heightMap[(posX + 1) + posZ * 32]) continue;
-                if ((posY + j) <= heightMap[(posX - 1) + posZ * 32]) continue;
-                if ((posY + j) <= heightMap[posX + (posZ + 1) * 32]) continue;
-                if ((posY + j) <= heightMap[posX + (posZ - 1) * 32]) continue;
+                if ((posY + j - 1) > extract(heightMap, posMap) + FLOOR_LEVEL || posY < 0) continue;
+                if ((posY + j) <= extract(heightMap, (posX + 1) + posZ * 32) + FLOOR_LEVEL) continue;
+                if ((posY + j) <= extract(heightMap, (posX - 1) + posZ * 32) + FLOOR_LEVEL) continue;
+                if ((posY + j) <= extract(heightMap, posX + (posZ + 1) * 32) + FLOOR_LEVEL) continue;
+                if ((posY + j) <= extract(heightMap, posX + (posZ - 1) * 32) + FLOOR_LEVEL) continue;
 
-                heightMap[posMap]++;
+                increase(heightMap, posMap, 1);
 
-                if (heightMap[currentHighestPos] < heightMap[posMap]) {
+                if (extract(heightMap, currentHighestPos) < extract(heightMap, posMap)) {
                     currentHighestPos = posMap;
                 }
             }
         }
 
-        if (heightMap[currentHighestPos] - FLOOR_LEVEL >= WANTED_CACTUS_HEIGHT) {
+        if (extract(heightMap, currentHighestPos) >= WANTED_CACTUS_HEIGHT) {
             uint64_t neighbor = 0;
             if (position == 0)
                 neighbor = NEIGHBOR1;
@@ -293,4 +298,3 @@ int main() {
     printf("But, verily, it be the nature of dreams to end.\n");
 
 }
-#pragma clang diagnostic pop
