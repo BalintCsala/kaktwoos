@@ -30,41 +30,6 @@
 #define FLOOR_LEVEL 63LL
 #endif
 
-/*#define CHUNK_SEED_BOTTOM_4 (CHUNK_SEED & 0xFULL)
-#define CHUNK_SEED_BIT_5 ((CHUNK_SEED >> 4ULL) & 1ULL)
-
-#ifndef OFFSET
-#define OFFSET 0
-#endif
-
-#ifndef END
-#define END (1ULL << 44ULL)
-#endif
-
-#ifndef CHUNK_SEED
-#define CHUNK_SEED 9567961692053ULL
-#endif
-
-#ifndef NEIGHBOR1
-#define NEIGHBOR1 856ULL
-#endif
-
-#ifndef NEIGHBOR2
-#define NEIGHBOR2 344ULL
-#endif
-
-#ifndef NEIGHBOR3
-#define NEIGHBOR3 840ULL
-#endif
-
-#ifndef DIAGONAL_INDEX
-#define DIAGONAL_INDEX 0ULL
-#endif
-
-#ifndef CACTUS_HEIGHT
-#define CACTUS_HEIGHT 12ULL
-#endif*/
-
 #ifdef DEBUG
 // Magic values, don't touch
 __device__ int64_t DEBUG_ARR[]{
@@ -278,7 +243,7 @@ void crack(uint64_t seed_offset, int32_t *num_seeds, uint64_t *seeds, uint8_t ch
             ASSERT(debug_index, neighbor);
             seeds[atomicAdd(num_seeds, 1)] =
                     ((uint64_t) extract(heightMap, currentHighestPos) << 58ULL) |
-                    ((uint64_t)neighbor << 48ULL) |
+                    ((uint64_t) neighbor << 48ULL) |
                     originalSeed;
             ASSERT(debug_index, ((neighbor << 48ULL) | originalSeed));
             return;
@@ -313,29 +278,11 @@ uint64_t offset;
 uint64_t count = 0;
 std::mutex info_lock;
 
-bool setCUDABlockingSync(int device) {
-    CUdevice  hcuDevice;
-    CUcontext hcuContext;
-
-    CUresult status = cuInit(0);
-    if(status != CUDA_SUCCESS)
-        return false;
-
-    status = cuDeviceGet( &hcuDevice, device);
-    if(status != CUDA_SUCCESS)
-        return false;
-
-    status = cuCtxCreate( &hcuContext, 0x4, hcuDevice );
-    if(status != CUDA_SUCCESS)
-        return false;
-
-    return true;
-}
+using namespace std::chrono_literals;
 
 void gpu_manager(int32_t gpuIndex) {
     std::string fileName = "kaktoos_seeds" + std::to_string(gpuIndex) + ".txt";
     FILE *out_file = fopen(fileName.c_str(), "w");
-    setCUDABlockingSync(gpuIndex);
     cudaSetDevice(gpuIndex);
     while (offset < end) {
         *nodes[gpuIndex].num_seeds = 0;
@@ -366,6 +313,7 @@ void gpu_manager(int32_t gpuIndex) {
         info_lock.lock();
         count += *nodes[gpuIndex].num_seeds;
         info_lock.unlock();
+        std::this_thread::sleep_for(0.01s);
     }
     fclose(out_file);
 }
@@ -376,41 +324,37 @@ int main(int argc, char **argv) {
     int32_t gpuIndex;
 
     if (argc < 10) {
-        std::cout << "Not enough arguments!" << std::endl;
-
-        return 0;
+        throw std::invalid_argument("Not enough arguments!");
     } else {
         try {
-            start = std::stoull(argv[1]);
-            end = std::stoull(argv[2]);
-            chunkSeed = std::stoull(argv[3]);
+            gpuIndex = std::stoi(argv[1]);
+            start = std::stoull(argv[2]);
+            end = std::stoull(argv[3]);
+            chunkSeed = std::stoull(argv[4]);
             chunkSeedBottom4Bits = chunkSeed & 15U;
             chunkSeedBit5 = (chunkSeed >> 4U) & 1U;
-            neighbor1 = std::stoi(argv[4]);
-            neighbor2 = std::stoi(argv[5]);
-            neighbor3 = std::stoi(argv[6]);
-            diagonalIndex = std::stoi(argv[7]);
-            cactusHeight = std::stoi(argv[8]);
-            gpuIndex = std::stoi(argv[9]);
+            neighbor1 = std::stoi(argv[5]);
+            neighbor2 = std::stoi(argv[6]);
+            neighbor3 = std::stoi(argv[7]);
+            diagonalIndex = std::stoi(argv[8]);
+            cactusHeight = std::stoi(argv[9]);
             std::cout << "Received new work unit: " << chunkSeed << std::endl;
             std::cout <<
-                    "Data: n1: " << neighbor1 <<
-                    ", n2: " << neighbor2 <<
-                    ", n3: " << neighbor3 <<
-                    ", di: " << diagonalIndex <<
-                    ", ch: " << (int)cactusHeight << std::endl;
+                      "Data: n1: " << neighbor1 <<
+                      ", n2: " << neighbor2 <<
+                      ", n3: " << neighbor3 <<
+                      ", di: " << diagonalIndex <<
+                      ", ch: " << (int) cactusHeight << std::endl;
         } catch (std::invalid_argument const &ex) {
-            std::cout << "Invalid argument" << std::endl;
+            throw std::invalid_argument("Invalid argument");
         } catch (std::out_of_range const &ex) {
-            std::cout << "Invalid number size" << std::endl;
+            throw std::invalid_argument("Invalid number size");
         }
     }
 
     setup_gpu_node(&nodes[0], gpuIndex);
     std::thread thr(gpu_manager, gpuIndex);
     time_t startTime = time(nullptr), currentTime;
-
-    using namespace std::chrono_literals;
 
     while (offset < end) {
         std::this_thread::sleep_for(1s);
@@ -419,8 +363,8 @@ int main(int argc, char **argv) {
         double speed = (double) (offset - start) / (double) timeElapsed / 1000000.0;
         printf("Speed: %.2fm/s, Block: %.5f%%, Block time: %llds\n",
                speed,
-               (double)(offset - start) / (double)(end - start) * 100,
-               (long long)timeElapsed);
+               (double) (offset - start) / (double) (end - start) * 100,
+               (long long) timeElapsed);
     }
 
     thr.join();
