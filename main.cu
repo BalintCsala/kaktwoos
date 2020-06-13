@@ -313,16 +313,36 @@ uint64_t offset;
 uint64_t count = 0;
 std::mutex info_lock;
 
-void gpu_manager(int32_t gpu_index) {
-    std::string fileName = "kaktoos_seeds" + std::to_string(gpu_index) + ".txt";
+bool setCUDABlockingSync(int device) {
+    CUdevice  hcuDevice;
+    CUcontext hcuContext;
+
+    CUresult status = cuInit(0);
+    if(status != CUDA_SUCCESS)
+        return false;
+
+    status = cuDeviceGet( &hcuDevice, device);
+    if(status != CUDA_SUCCESS)
+        return false;
+
+    status = cuCtxCreate( &hcuContext, 0x4, hcuDevice );
+    if(status != CUDA_SUCCESS)
+        return false;
+
+    return true;
+}
+
+void gpu_manager(int32_t gpuIndex) {
+    std::string fileName = "kaktoos_seeds" + std::to_string(gpuIndex) + ".txt";
     FILE *out_file = fopen(fileName.c_str(), "w");
-    cudaSetDevice(gpu_index);
+    setCUDABlockingSync(gpuIndex);
+    cudaSetDevice(gpuIndex);
     while (offset < end) {
-        *nodes[gpu_index].num_seeds = 0;
+        *nodes[gpuIndex].num_seeds = 0;
         crack<<<WORK_UNIT_SIZE / BLOCK_SIZE, BLOCK_SIZE, 0>>>(
                 offset,
-                nodes[gpu_index].num_seeds,
-                nodes[gpu_index].seeds,
+                nodes[gpuIndex].num_seeds,
+                nodes[gpuIndex].seeds,
                 chunkSeedBottom4Bits,
                 neighbor1,
                 neighbor2,
@@ -334,17 +354,17 @@ void gpu_manager(int32_t gpu_index) {
         offset += WORK_UNIT_SIZE;
         info_lock.unlock();
         cudaDeviceSynchronize();
-        for (int32_t i = 0, e = *nodes[gpu_index].num_seeds; i < e; i++) {
+        for (int32_t i = 0, e = *nodes[gpuIndex].num_seeds; i < e; i++) {
 #ifndef DEBUG
-            std::cerr << nodes[gpu_index].seeds[i] << std::endl;
+            std::cerr << nodes[gpuIndex].seeds[i] << std::endl;
             printf("Found seed: %llu, height: %llu\n",
-                   nodes[gpu_index].seeds[i] & RANDOM_MASK,
-                   (nodes[gpu_index].seeds[i] >> 58ULL) & 63ULL);
+                   nodes[gpuIndex].seeds[i] & RANDOM_MASK,
+                   (nodes[gpuIndex].seeds[i] >> 58ULL) & 63ULL);
 #endif
         }
         fflush(out_file);
         info_lock.lock();
-        count += *nodes[gpu_index].num_seeds;
+        count += *nodes[gpuIndex].num_seeds;
         info_lock.unlock();
     }
     fclose(out_file);
@@ -353,9 +373,9 @@ void gpu_manager(int32_t gpu_index) {
 int main(int argc, char **argv) {
     printf("Searching %lld total seeds...\n", (long long) (end - start));
 
-    std::thread threads[GPU_COUNT];
+    int32_t gpuIndex;
 
-    if (argc < 9) {
+    if (argc < 10) {
         std::cout << "Not enough arguments!" << std::endl;
 
         return 0;
@@ -371,7 +391,8 @@ int main(int argc, char **argv) {
             neighbor3 = std::stoi(argv[6]);
             diagonalIndex = std::stoi(argv[7]);
             cactusHeight = std::stoi(argv[8]);
-            std::cout << "Starting work on chunk seed " << chunkSeed << std::endl;
+            gpuIndex = std::stoi(argv[9]);
+            std::cout << "Received new work unit: " << chunkSeed << std::endl;
             std::cout <<
                     "Data: n1: " << neighbor1 <<
                     ", n2: " << neighbor2 <<
@@ -385,11 +406,9 @@ int main(int argc, char **argv) {
         }
     }
 
+    setup_gpu_node(&nodes[0], gpuIndex);
+    std::thread thr(gpu_manager, gpuIndex);
     time_t startTime = time(nullptr), currentTime;
-    for (int32_t i = 0; i < GPU_COUNT; i++) {
-        setup_gpu_node(&nodes[i], i);
-        threads[i] = std::thread(gpu_manager, i);
-    }
 
     using namespace std::chrono_literals;
 
@@ -404,11 +423,8 @@ int main(int argc, char **argv) {
                (long long)timeElapsed);
     }
 
-    for (auto &thread : threads) {
-        thread.join();
-    }
+    thr.join();
 
-    printf("Done!\n");
-    printf("But, verily, it be the nature of dreams to end.\n");
+    std::cout << "Finished work unit" << std::endl;
 
 }
