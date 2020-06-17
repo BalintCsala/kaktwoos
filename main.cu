@@ -274,6 +274,8 @@ uint8_t cactusHeight;
 uint64_t start;
 uint64_t end;
 
+std::vector<uint64_t> foundSeeds;
+
 uint64_t offset;
 uint64_t count = 0;
 std::mutex info_lock;
@@ -304,6 +306,9 @@ void gpu_manager(int32_t gpuIndex) {
         for (int32_t i = 0, e = *nodes[gpuIndex].num_seeds; i < e; i++) {
 #ifndef DEBUG
             std::cerr << nodes[gpuIndex].seeds[i] << std::endl;
+            info_lock.lock();
+            foundSeeds.push_back(nodes[gpuIndex].seeds[i]);
+            info_lock.unlock();
             printf("Found seed: %llu, height: %llu\n",
                    nodes[gpuIndex].seeds[i] & RANDOM_MASK,
                    (nodes[gpuIndex].seeds[i] >> 58ULL) & 63ULL);
@@ -323,34 +328,62 @@ int main(int argc, char **argv) {
 
     int32_t gpuIndex;
 
-    if (argc < 10) {
-        throw std::invalid_argument("Not enough arguments!");
-    } else {
+    chunkSeed = 0;
+    chunkSeedBottom4Bits = 0;
+    chunkSeedBit5 = 0;
+    neighbor1 = 0;
+    neighbor2 = 0;
+    neighbor3 = 0;
+    diagonalIndex = 0;
+    cactusHeight = 0;
+    start = 0;
+    end = 0;
+
+    for (int i = 1; i < argc; i += 2) {
+        std::string param = argv[i];
         try {
-            gpuIndex = std::stoi(argv[1]);
-            start = std::stoull(argv[2]);
-            end = std::stoull(argv[3]);
-            chunkSeed = std::stoull(argv[4]);
-            chunkSeedBottom4Bits = chunkSeed & 15U;
-            chunkSeedBit5 = (chunkSeed >> 4U) & 1U;
-            neighbor1 = std::stoi(argv[5]);
-            neighbor2 = std::stoi(argv[6]);
-            neighbor3 = std::stoi(argv[7]);
-            diagonalIndex = std::stoi(argv[8]);
-            cactusHeight = std::stoi(argv[9]);
-            std::cout << "Received new work unit: " << chunkSeed << std::endl;
-            std::cout <<
-                      "Data: n1: " << neighbor1 <<
-                      ", n2: " << neighbor2 <<
-                      ", n3: " << neighbor3 <<
-                      ", di: " << diagonalIndex <<
-                      ", ch: " << (int) cactusHeight << std::endl;
+            if (param == "-cs" || param == "--chunkseed") {
+                chunkSeed = std::stoull(argv[i + 1]);
+                chunkSeedBottom4Bits = chunkSeed & 15U;
+                chunkSeedBit5 = (chunkSeed >> 4U) & 1U;
+            } else if (param == "-s" || param == "--start") {
+                start = std::stoull(argv[i + 1]);
+            } else if (param == "-e" || param == "--end") {
+                end = std::stoull(argv[i + 1]);
+            } else if (param == "-d" || param == "--device") {
+                gpuIndex = std::stoi(argv[i + 1]);
+            } else if (param == "-n1" || param == "--neighbor1") {
+                neighbor1 = std::stoi(argv[i + 1]);
+            } else if (param == "-n2" || param == "--neighbor2") {
+                neighbor2 = std::stoi(argv[i + 1]);
+            } else if (param == "-n3" || param == "--neighbor3") {
+                neighbor3 = std::stoi(argv[i + 1]);
+            } else if (param == "-ch" || param == "--cactusheight") {
+                cactusHeight = std::stoi(argv[i + 1]);
+            } else if (param == "-di" || param == "--diagonalindex") {
+                diagonalIndex = std::stoi(argv[i + 1]);;
+            } else {
+                std::cout << "Invalid parameter: " << param << std::endl;
+            }
         } catch (std::invalid_argument const &ex) {
-            throw std::invalid_argument("Invalid argument");
+            throw std::invalid_argument("Invalid argument; " + std::string(argv[i]) + ": " + std::string(argv[i + 1]));
         } catch (std::out_of_range const &ex) {
-            throw std::invalid_argument("Invalid number size");
+            throw std::invalid_argument("Invalid number, input is out of range!");
         }
     }
+
+    std::cout << "Received new work unit: " << chunkSeed << std::endl;
+    std::cout << "argv: ";
+    for (int i = 0; i < argc; i++) {
+        std::cout << argv[i] << " ";
+    }
+    std::cout << std::endl;
+    std::cout <<
+              "Data: n1: " << neighbor1 <<
+              ", n2: " << neighbor2 <<
+              ", n3: " << neighbor3 <<
+              ", di: " << diagonalIndex <<
+              ", ch: " << (int) cactusHeight << std::endl;
 
     setup_gpu_node(&nodes[0], gpuIndex);
     std::thread thr(gpu_manager, gpuIndex);
@@ -369,6 +402,12 @@ int main(int argc, char **argv) {
 
     thr.join();
 
-    std::cout << "Finished work unit" << std::endl;
+    std::cout << "Finished work unit, scanned " << (end - start) <<
+            " seeds in " << (currentTime - startTime) << "seconds" << std::endl;
+    std::cout << "Found seeds: \n";
+    for (const auto &seed : foundSeeds) {
+        std::cout << "    " << seed << "\n";
+    }
+    std::cout << std::endl;
 
 }
