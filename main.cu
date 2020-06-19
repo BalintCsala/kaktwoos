@@ -343,12 +343,14 @@ int main(int argc, char **argv) {
         std::string param = argv[i];
         try {
             if (param == "-cs" || param == "--chunkseed") {
-                chunkSeed = std::stoull(argv[i + 1]);
+                //chunkSeed = std::stoull(argv[i + 1]);
+                sscanf(argv[i + 1], "%llu", &chunkSeed);
                 chunkSeedBottom4Bits = chunkSeed & 15U;
                 chunkSeedBit5 = (chunkSeed >> 4U) & 1U;
             } else if (param == "-s" || param == "--start") {
-                start = std::stoull(argv[i + 1]);
+                sscanf(argv[i + 1], "%llu", &start);
             } else if (param == "-e" || param == "--end") {
+                sscanf(argv[i + 1], "%llu", &end);
                 end = std::stoull(argv[i + 1]);
             } else if (param == "-d" || param == "--device") {
                 gpuIndex = std::stoi(argv[i + 1]);
