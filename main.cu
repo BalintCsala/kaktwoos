@@ -8,6 +8,7 @@
 #include <chrono>
 #include <string>
 #include <iostream>
+#include <inttypes.h>
 
 #define RANDOM_MULTIPLIER 0x5DEECE66DULL
 #define RANDOM_ADDEND 0xBULL
@@ -344,13 +345,13 @@ int main(int argc, char **argv) {
         try {
             if (param == "-cs" || param == "--chunkseed") {
                 //chunkSeed = std::stoull(argv[i + 1]);
-                sscanf(argv[i + 1], "%llu", &chunkSeed);
+                sscanf(argv[i + 1], "%" SCNd64, &chunkSeed);
                 chunkSeedBottom4Bits = chunkSeed & 15U;
                 chunkSeedBit5 = (chunkSeed >> 4U) & 1U;
             } else if (param == "-s" || param == "--start") {
-                sscanf(argv[i + 1], "%llu", &start);
+                sscanf(argv[i + 1], "%" SCNd64, &start);
             } else if (param == "-e" || param == "--end") {
-                sscanf(argv[i + 1], "%llu", &end);
+                sscanf(argv[i + 1], "%" SCNd64, &end);
                 end = std::stoull(argv[i + 1]);
             } else if (param == "-d" || param == "--device") {
                 gpuIndex = std::stoi(argv[i + 1]);
